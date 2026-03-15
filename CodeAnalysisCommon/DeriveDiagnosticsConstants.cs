@@ -1,4 +1,4 @@
-﻿namespace Derive.CodeAnalysisCommon
+﻿namespace Derive
 {
     public static class DeriveDiagnosticsConstants
     {

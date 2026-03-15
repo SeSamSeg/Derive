@@ -1,5 +1,4 @@
-﻿using Derive.Core;
-using Shouldly;
+﻿using Shouldly;
 
 namespace Derive.Tests
 {

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Immutable;
 
-namespace Derive.Core
+namespace Derive
 {
     /// <summary>
     /// Derive from base classes.

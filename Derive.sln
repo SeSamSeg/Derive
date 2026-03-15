@@ -5,7 +5,7 @@ VisualStudioVersion = 18.1.11312.151
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Derive.Generator", "Generator\Derive.Generator.csproj", "{7A6FC756-4055-1D29-1BCF-260B2758102A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Derive.Core", "Core\Derive.Core.csproj", "{1F925F73-C285-613D-3887-1F1129A80819}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Derive.Common", "Common\Derive.Common.csproj", "{1F925F73-C285-613D-3887-1F1129A80819}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Derive.Tests", "Tests\Derive.Tests.csproj", "{0A8F09E8-2431-4C47-9171-4CB89B3E391A}"
 EndProject
