@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Tests": {
+      "commandName": "DebugRoslynComponent",
+      "targetProject": "..\\Tests\\Derive.Tests.csproj"
+    },
+    "Derive": {
+      "commandName": "DebugRoslynComponent",
+      "targetProject": "..\\Derive\\Derive.csproj"
+    }
+  }
+}

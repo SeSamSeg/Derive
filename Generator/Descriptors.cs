@@ -1,5 +1,4 @@
-﻿using Derive.CodeAnalysisCommon;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 
 namespace Derive.Generator
 {
@@ -23,10 +22,19 @@ namespace Derive.Generator
             isEnabledByDefault: true
         );
 
-        public static readonly DiagnosticDescriptor DeriveContainedType = new(
-            id: DeriveDiagnosticsConstants.DeriveContainedTypeId,
-            title: "Cannot derive a contained class",
-            messageFormat: "Class '{0}' is contained in {1}",
+        public static readonly DiagnosticDescriptor PublicBaseTypeNotAttributed = new(
+            id: DeriveDiagnosticsConstants.PublicBaseTypeNotAttributedId,
+            title: "Cannot derive from a public base type from another library",
+            messageFormat: "Class '{0}' derives from {1} but the base type {2}",
+            category: "Derive",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
+
+        public static readonly DiagnosticDescriptor PartialBaseType = new(
+            id: DeriveDiagnosticsConstants.PartialBaseTypeId,
+            title: "A base type cannot be partial",
+            messageFormat: "Class '{0}' is a partial class, this is not supported",
             category: "Derive",
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true

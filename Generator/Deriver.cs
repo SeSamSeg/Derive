@@ -14,7 +14,7 @@ namespace Derive.Generator
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
             // Step 1: Find classes with our marker attribute
-            var provider = context
+            var deriverInfo = context
                 .SyntaxProvider.CreateSyntaxProvider(
                     predicate: static (node, _) =>
                         node is ClassDeclarationSyntax cds && cds.AttributeLists.Count > 0,
@@ -22,7 +22,10 @@ namespace Derive.Generator
                 )
                 .WhereNotNull();
 
-            context.RegisterSourceOutput(provider, Generate);
+            IncrementalValueProvider<ImmutableArray<string>> globalUsings =
+                DeclarationHelpers.ProvideUsings(context);
+
+            context.RegisterSourceOutput(deriverInfo.Combine(globalUsings), Generate);
         }
 
         private static ClassDeriveInfo? GetClassInfo(GeneratorSyntaxContext context)
@@ -30,12 +33,26 @@ namespace Derive.Generator
             var classDecl = (ClassDeclarationSyntax)context.Node;
 
             // Look for an attribute named "Derive"
-            var attribute = classDecl
+            var attributes = classDecl
                 .AttributeLists.SelectMany(al => al.Attributes)
-                .FirstOrDefault(a => a.Name.ToString().Equals("Derive", StringComparison.Ordinal));
-
-            if (attribute == null || attribute.ArgumentList == null)
+                .OfAttributeType<DeriveAttribute>()
+                .ToArray();
+            AttributeSyntax attribute;
+            switch (attributes.Length)
             {
+                case 0:
+                    return null;
+                case 1:
+                    attribute = attributes[0];
+                    break;
+                default:
+                    // TODO: Diagnostics?
+                    throw new NotImplementedException("More than one Derive attribute detected");
+            }
+
+            if (attribute.ArgumentList == null)
+            {
+                // Nothing to derive from
                 return null;
             }
 
@@ -92,7 +109,8 @@ namespace Derive.Generator
         }
 
         private static string? GetNamespace(ClassDeclarationSyntax classDecl)
-        { // Walk up the syntax tree until we hit a NamespaceDeclarationSyntax
+        {
+            // Walk up the syntax tree until we hit a NamespaceDeclarationSyntax
             var parent = classDecl.Parent;
             while (parent != null)
             {
@@ -115,15 +133,19 @@ namespace Derive.Generator
             return null;
         }
 
-        private static void Generate(SourceProductionContext spc, ClassDeriveInfo classDeriveInfo)
+        private static void Generate(
+            SourceProductionContext spc,
+            (ClassDeriveInfo, ImmutableArray<string>) tuple
+        )
         {
-            foreach (var baseType in classDeriveInfo.BaseTypes)
-            {
-                GenerateForBase(spc, classDeriveInfo.Type, baseType);
-            }
+            var (classDeriveInfo, globalUsings) = tuple;
             foreach (var diagnostic in classDeriveInfo.Diagnostics)
             {
                 spc.ReportDiagnostic(diagnostic);
+            }
+            foreach (var baseType in classDeriveInfo.BaseTypes)
+            {
+                GenerateForBase(spc, classDeriveInfo.Type, baseType);
             }
         }
 
@@ -133,110 +155,157 @@ namespace Derive.Generator
             ITypeSymbol baseType
         )
         {
+            SyntaxNode root;
+            TypeDeclarationSyntax baseTypeSyntax;
+
             if (baseType.DeclaringSyntaxReferences.Length == 0)
             {
-                throw new InvalidOperationException(
-                    $"Can only use source-defined base classes, {baseType.Name} is not"
-                );
+                if (!TryGetBaseSyntaxFromMetadata(spc, type, baseType, out root, out baseTypeSyntax))
+                    return;
             }
-            if (baseType.DeclaringSyntaxReferences.Length > 1)
+            else if (baseType.DeclaringSyntaxReferences.Length > 1)
             {
-                throw new InvalidOperationException(
-                    $"Can only use non-partial base classes, {baseType.Name} is not"
+                spc.ReportDiagnostic(
+                    Diagnostic.Create(Descriptors.PartialBaseType, type.Locations[0], type.Name)
                 );
+                return;
             }
-            SyntaxReference baseReference = baseType.DeclaringSyntaxReferences.Single();
-            if (
-                baseReference.GetSyntax(spc.CancellationToken)
-                is not TypeDeclarationSyntax baseSyntax
-            )
+            else
             {
-                throw new InvalidOperationException($"Could not get syntax for {baseType.Name}");
+                baseTypeSyntax = baseType.GetTypeSyntax(spc.CancellationToken);
+                root = baseTypeSyntax.SyntaxTree.GetRoot(spc.CancellationToken);
             }
-            var root = baseReference.SyntaxTree.GetRoot(spc.CancellationToken);
+
             var usingsToCopy = root.ChildNodes().OfType<UsingDirectiveSyntax>().ToArray();
+            var membersToCopy = baseTypeSyntax
+                .Members.OfType<MethodDeclarationSyntax>()
+                .ToArray();
 
-            var membersToCopy = baseSyntax.Members.OfType<MethodDeclarationSyntax>().ToArray();
-
-            if (!membersToCopy.Any())
+            if (membersToCopy.Length == 0)
                 return;
 
-            var source = new IndentedStringBuilder();
+            var builder = new IndentedStringBuilder();
             if (usingsToCopy.Length > 0)
             {
                 foreach (var @using in usingsToCopy)
                 {
-                    source.AppendLine(@using.ToString());
+                    builder.AppendLine(@using.ToString());
                 }
-                source.AppendLine();
+                builder.AppendLine();
             }
 
-            if (type.ContainingNamespace != null)
-            {
-                source.AppendLine($"namespace {type.ContainingNamespace}");
-                source.AppendLine("{");
-                source.IncrementIndent();
-            }
-            if (type.ContainingType != null)
-            {
-                StartClassDeclaration(type.ContainingType, source);
-            }
-            StartClassDeclaration(type, source);
-            foreach (var m in membersToCopy)
-            {
-                source.AppendLine(m.ToString());
-            }
-            EndBlock(source);
-            if (type.ContainingType != null)
-            {
-                EndBlock(source);
-            }
-            if (type.ContainingNamespace != null)
-            {
-                EndBlock(source);
-            }
+            new PartialClassExtensionBuilder(type)
+                .WithBody(builder =>
+                {
+                    foreach (var m in membersToCopy)
+                    {
+                        builder.AppendLine(m.ToString());
+                    }
+                })
+                .AppendOnto(builder);
 
             spc.AddSource(
                 $"{type.Name}_{baseType.Name}_Derived.g.cs",
-                SourceText.From(source.ToString(), Encoding.UTF8)
+                SourceText.From(builder.ToString(), Encoding.UTF8)
             );
+        }
 
-            static void StartClassDeclaration(ITypeSymbol type, IndentedStringBuilder source)
+        /// <summary>
+        /// Pulls the serialized base-class source emitted by <see cref="BaseSerializer"/>
+        /// from <c>Derive.Generated.BaseSources</c> in the base type's assembly.
+        /// Returns null on success, or a user-facing reason string on user-fixable failures.
+        /// Throws when the metadata is in an unexpected internal state.
+        /// </summary>
+        private static string? LoadSerializedBaseSyntax(
+            INamedTypeSymbol baseType,
+            CancellationToken cancellationToken,
+            out SyntaxNode root,
+            out TypeDeclarationSyntax typeSyntax
+        )
+        {
+            root = null!;
+            typeSyntax = null!;
+
+            string assemblyName = baseType.ContainingAssembly?.Name ?? "<unknown>";
+            string sourcesTypeName = $"{Namings.GeneratedNamespace}.BaseSources";
+            var sourcesType = baseType.ContainingAssembly?.GetTypeByMetadataName(sourcesTypeName);
+            if (sourcesType is null)
             {
-                switch (type.DeclaredAccessibility)
-                {
-                    case Accessibility.Private:
-                        source.Append("private ");
-                        break;
-                    case Accessibility.ProtectedAndInternal:
-                        source.Append("private protected ");
-                        break;
-                    case Accessibility.Protected:
-                        source.Append("protected ");
-                        break;
-                    case Accessibility.Internal:
-                        source.Append("internal ");
-                        break;
-                    case Accessibility.ProtectedOrInternal:
-                        source.Append("protected internal ");
-                        break;
-                    case Accessibility.Public:
-                        source.Append("public ");
-                        break;
-                    default:
-                        throw new NotImplementedException();
-                }
-                source.Append("partial class ");
-                source.AppendLine(type.Name);
-                source.AppendLine("{");
-                source.IncrementIndent();
+                return $"is in assembly '{assemblyName}' which does not run the BaseSerializer source generator (no '{sourcesTypeName}' found)";
             }
 
-            static void EndBlock(IndentedStringBuilder source)
+            string identifier = Namings.GetDeterministicHashIdentifier(
+                Namings.GetFullMetadataName(baseType)
+            );
+            var field = sourcesType.GetMembers(identifier).OfType<IFieldSymbol>().SingleOrDefault();
+            if (field is null)
             {
-                source.DecrementIndent();
-                source.AppendLine("}");
+                return $"is not attributed as Base in assembly '{assemblyName}'";
             }
+            if (!field.HasConstantValue || field.ConstantValue is not string source)
+            {
+                throw new InvalidOperationException(
+                    $"'{sourcesTypeName}.{identifier}' in assembly '{assemblyName}' is not a string constant."
+                );
+            }
+
+            root = CSharpSyntaxTree
+                .ParseText(source, cancellationToken: cancellationToken)
+                .GetRoot(cancellationToken);
+            var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().SingleOrDefault();
+            if (typeDecl is null)
+            {
+                throw new InvalidOperationException(
+                    $"No type declaration in serialized source for '{baseType.Name}' in assembly '{assemblyName}'."
+                );
+            }
+            typeSyntax = typeDecl;
+            return null;
+        }
+
+        private static bool TryGetBaseSyntaxFromMetadata(
+            SourceProductionContext spc,
+            ITypeSymbol type,
+            ITypeSymbol baseType,
+            out SyntaxNode root,
+            out TypeDeclarationSyntax baseTypeSyntax
+        )
+        {
+            root = null!;
+            baseTypeSyntax = null!;
+
+            if (baseType is not INamedTypeSymbol namedBaseType)
+            {
+                ReportError(
+                    $"({baseType.Kind}) is not a named type and cannot be loaded from another assembly"
+                );
+                return false;
+            }
+
+            var baseTypeError = LoadSerializedBaseSyntax(
+                namedBaseType,
+                spc.CancellationToken,
+                out root,
+                out baseTypeSyntax
+            );
+            if (baseTypeError is not null)
+            {
+                ReportError(baseTypeError);
+                return false;
+            }
+
+            return true;
+
+            void ReportError(string reason) =>
+                spc.ReportDiagnostic(
+                    Diagnostic.Create(
+                        Descriptors.PublicBaseTypeNotAttributed,
+                        type.Locations[0],
+                        type.Name,
+                        baseType.Name,
+                        reason
+                    )
+                );
         }
 
         private sealed record ClassDeriveInfo(

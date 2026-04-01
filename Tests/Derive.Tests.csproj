@@ -18,6 +18,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Derive\Derive.csproj" />
     <ProjectReference
       Include="..\Fixes\Derive.Fixes.csproj"
       OutputItemType="Analyzer"

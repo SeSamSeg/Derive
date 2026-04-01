@@ -5,6 +5,7 @@
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
-DER0001 | Derive | Error | DeriveDiagnostics
-DER0002 | Derive | Error | DeriveDiagnostics
+DER0001 | Derive | Error | Descriptors
+DER0002 | Derive | Error | Descriptors
 DER0003 | Derive | Error | Descriptors
+DER0004 | Derive | Error | Descriptors
