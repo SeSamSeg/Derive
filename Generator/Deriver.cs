@@ -200,7 +200,8 @@ namespace Derive.Generator
 
             var usingsToCopy = root.ChildNodes().OfType<UsingDirectiveSyntax>().ToArray();
             var membersToCopy = baseTypeSyntax
-                .Members.OfType<MethodDeclarationSyntax>()
+                .Members
+                .Where(m => m is MethodDeclarationSyntax or PropertyDeclarationSyntax)
                 .Where(m => !m.Modifiers.Any(t => t.IsKind(SyntaxKind.AbstractKeyword)))
                 .ToArray();
             var baseList = baseTypeSyntax
@@ -214,11 +215,16 @@ namespace Derive.Generator
             var typeArgRewriter = CreateTypeParameterSubstitution(baseType);
 
             var builder = new IndentedStringBuilder();
-            if (usingsToCopy.Length > 0)
+            var baseNamespace = baseType.ContainingNamespace?.ToDisplayString();
+            var usingLines = usingsToCopy.Select(u => u.ToString()).ToList();
+            // Base types reference their own namespace implicitly; the generated file does not
+            if (baseNamespace != null && !usingLines.Any(u => u.Contains(baseNamespace)))
+                usingLines.Add($"using {baseNamespace};");
+            if (usingLines.Count > 0)
             {
-                foreach (var @using in usingsToCopy)
+                foreach (var @using in usingLines)
                 {
-                    builder.AppendLine(@using.ToString());
+                    builder.AppendLine(@using);
                 }
                 builder.AppendLine();
             }
