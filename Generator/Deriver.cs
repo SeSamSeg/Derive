@@ -186,6 +186,8 @@ namespace Derive.Generator
             if (membersToCopy.Length == 0 && baseList == null)
                 return;
 
+            var typeArgRewriter = CreateTypeParameterSubstitution(baseType);
+
             var builder = new IndentedStringBuilder();
             if (usingsToCopy.Length > 0)
             {
@@ -201,13 +203,15 @@ namespace Derive.Generator
                 {
                     foreach (var m in membersToCopy)
                     {
-                        builder.AppendLine(m.ToString());
+                        var node = typeArgRewriter?.Visit(m) ?? m;
+                        builder.AppendLine(node.ToString());
                     }
                 }).WithTypeBase(builder =>
                 {
                     if (baseList != null)
                     {
-                        builder.Append(baseList.ToString());
+                        var node = typeArgRewriter?.Visit(baseList) ?? baseList;
+                        builder.Append(node.ToString());
                     }
                 }).AppendOnto(builder);
 
@@ -320,5 +324,37 @@ namespace Derive.Generator
             ITypeSymbol[] BaseTypes,
             ImmutableArray<Diagnostic> Diagnostics
         );
+
+        private static TypeParameterSubstitutionRewriter? CreateTypeParameterSubstitution(
+            ITypeSymbol baseType
+        )
+        {
+            if (baseType is not INamedTypeSymbol { IsGenericType: true } named)
+                return null;
+
+            var parameters = named.OriginalDefinition.TypeParameters;
+            var arguments = named.TypeArguments;
+            if (parameters.Length != arguments.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Type parameter/argument arity mismatch on '{named}': "
+                        + $"{parameters.Length} parameters vs {arguments.Length} arguments."
+                );
+            }
+            if (parameters.Length == 0)
+                return null;
+
+            var symbolComparer = SymbolEqualityComparer.Default;
+            var map = new Dictionary<string, TypeSyntax>(parameters.Length);
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                if (symbolComparer.Equals(parameters[i], arguments[i]))
+                    continue;
+                map[parameters[i].Name] = SyntaxFactory.ParseTypeName(
+                    arguments[i].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                );
+            }
+            return map.Count == 0 ? null : new TypeParameterSubstitutionRewriter(map);
+        }
     }
 }
