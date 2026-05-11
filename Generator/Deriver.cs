@@ -203,6 +203,7 @@ namespace Derive.Generator
                 .Members
                 .Where(m => m is MethodDeclarationSyntax or PropertyDeclarationSyntax)
                 .Where(m => !m.Modifiers.Any(t => t.IsKind(SyntaxKind.AbstractKeyword)))
+                .Where(m => !(m.Modifiers.Any(t => t.IsKind(SyntaxKind.VirtualKeyword)) && IsDefinedOn(m, type)))
                 .ToArray();
             var baseList = baseTypeSyntax
                 .BaseList;
@@ -445,6 +446,17 @@ namespace Derive.Generator
                 );
             }
             return map.Count == 0 ? null : new TypeParameterSubstitutionRewriter(map);
+        }
+
+        private static bool IsDefinedOn(MemberDeclarationSyntax m, INamedTypeSymbol type)
+        {
+            var name = m switch
+            {
+                MethodDeclarationSyntax method => method.Identifier.Text,
+                PropertyDeclarationSyntax prop => prop.Identifier.Text,
+                _ => null
+            };
+            return name != null && type.GetMembers(name).Length > 0;
         }
     }
 }

@@ -23,6 +23,24 @@ namespace Derive.Tests
         public bool Property => true;
     }
 
+    internal class VirtualBase
+    {
+        public virtual bool VirtualMethod() => true;
+
+        public virtual bool VirtualProperty => true;
+    }
+
+    [Derive<VirtualBase>]
+    internal partial class VirtualSub { }
+
+    [Derive<VirtualBase>]
+    internal partial class VirtualOverriddenSub
+    {
+        public bool VirtualMethod() => false;
+
+        public bool VirtualProperty => false;
+    }
+
     internal abstract class AbstractBase
     {
         public abstract int Value { get; }
@@ -95,6 +113,22 @@ namespace Derive.Tests
         {
             var sut = new AbstractSub();
             sut.Double().ShouldBe(42);
+        }
+
+        [Fact]
+        public void Virtual_copies_when_not_implemented()
+        {
+            var sut = new VirtualSub();
+            sut.VirtualMethod().ShouldBeTrue();
+            sut.VirtualProperty.ShouldBeTrue();
+        }
+
+        [Fact]
+        public void Virtual_overridden_when_implemented()
+        {
+            var sut = new VirtualOverriddenSub();
+            sut.VirtualMethod().ShouldBeFalse();
+            sut.VirtualProperty.ShouldBeFalse();
         }
     }
 }
