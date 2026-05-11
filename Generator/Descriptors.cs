@@ -39,5 +39,14 @@ namespace Derive.Generator
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true
         );
+
+        public static readonly DiagnosticDescriptor AbstractMemberNotImplemented = new(
+            id: DeriveDiagnosticsConstants.AbstractMemberNotImplementedId,
+            title: "Abstract member not implemented in deriving class",
+            messageFormat: "Class '{0}' derives from '{1}' but does not implement abstract member '{2}'",
+            category: "Derive",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
     }
 }

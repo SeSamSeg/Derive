@@ -63,7 +63,7 @@ namespace Derive.Generator
             if (derivedCount == 0)
                 return null;
 
-            var baseTypes = new ITypeSymbol[derivedCount];
+            var baseTypes = ImmutableArray.CreateBuilder<INamedTypeSymbol>(derivedCount);
             for (int i = 0; i < attribute.ArgumentList.Arguments.Count; i++)
             {
                 AttributeArgumentSyntax arg = attribute.ArgumentList.Arguments[i];
@@ -78,16 +78,28 @@ namespace Derive.Generator
                     );
                     continue;
                 }
-                if (context.SemanticModel.GetTypeInfo(tos.Type).Type is not ITypeSymbol type)
+                var typeInfo = context.SemanticModel.GetTypeInfo(tos.Type).Type;
+                if (typeInfo is null)
                 {
                     throw new InvalidOperationException(
                         $"Could not process typeof expression {tos}"
                     );
                 }
-                baseTypes[i] = type;
+                if (typeInfo is not INamedTypeSymbol named)
+                {
+                    diagnostics.Add(
+                        Diagnostic.Create(
+                            Descriptors.InvalidDeriveArguments,
+                            classDecl.GetLocation(),
+                            "use a named type as argument"
+                        )
+                    );
+                    continue;
+                }
+                baseTypes.Add(named);
             }
 
-            if (context.SemanticModel.GetDeclaredSymbol(classDecl) is not ITypeSymbol classType)
+            if (context.SemanticModel.GetDeclaredSymbol(classDecl) is not INamedTypeSymbol classType)
             {
                 return null;
             }
@@ -105,7 +117,7 @@ namespace Derive.Generator
 
             var classNamespace = GetNamespace(classDecl);
 
-            return new(classType, baseTypes, diagnostics.ToImmutable());
+            return new(classType, baseTypes.ToImmutable(), diagnostics.ToImmutable());
         }
 
         private static string? GetNamespace(ClassDeclarationSyntax classDecl)
@@ -151,8 +163,8 @@ namespace Derive.Generator
 
         private static void GenerateForBase(
             SourceProductionContext spc,
-            ITypeSymbol type,
-            ITypeSymbol baseType
+            INamedTypeSymbol type,
+            INamedTypeSymbol baseType
         )
         {
             SyntaxNode root;
@@ -179,9 +191,12 @@ namespace Derive.Generator
             var usingsToCopy = root.ChildNodes().OfType<UsingDirectiveSyntax>().ToArray();
             var membersToCopy = baseTypeSyntax
                 .Members.OfType<MethodDeclarationSyntax>()
+                .Where(m => !m.Modifiers.Any(t => t.IsKind(SyntaxKind.AbstractKeyword)))
                 .ToArray();
             var baseList = baseTypeSyntax
                 .BaseList;
+
+            ReportMissingAbstractImplementations(spc, type, baseType);
 
             if (membersToCopy.Length == 0 && baseList == null)
                 return;
@@ -276,8 +291,8 @@ namespace Derive.Generator
 
         private static bool TryGetBaseSyntaxFromMetadata(
             SourceProductionContext spc,
-            ITypeSymbol type,
-            ITypeSymbol baseType,
+            INamedTypeSymbol type,
+            INamedTypeSymbol baseType,
             out SyntaxNode root,
             out TypeDeclarationSyntax baseTypeSyntax
         )
@@ -285,16 +300,8 @@ namespace Derive.Generator
             root = null!;
             baseTypeSyntax = null!;
 
-            if (baseType is not INamedTypeSymbol namedBaseType)
-            {
-                ReportError(
-                    $"({baseType.Kind}) is not a named type and cannot be loaded from another assembly"
-                );
-                return false;
-            }
-
             var baseTypeError = LoadSerializedBaseSyntax(
-                namedBaseType,
+                baseType,
                 spc.CancellationToken,
                 out root,
                 out baseTypeSyntax
@@ -320,24 +327,71 @@ namespace Derive.Generator
         }
 
         private sealed record ClassDeriveInfo(
-            ITypeSymbol Type,
-            ITypeSymbol[] BaseTypes,
+            INamedTypeSymbol Type,
+            ImmutableArray<INamedTypeSymbol> BaseTypes,
             ImmutableArray<Diagnostic> Diagnostics
         );
 
-        private static TypeParameterSubstitutionRewriter? CreateTypeParameterSubstitution(
-            ITypeSymbol baseType
+        private static void ReportMissingAbstractImplementations(
+            SourceProductionContext spc,
+            INamedTypeSymbol type,
+            INamedTypeSymbol baseType
         )
         {
-            if (baseType is not INamedTypeSymbol { IsGenericType: true } named)
+            var symbolComparer = SymbolEqualityComparer.Default;
+            var unimplemented = baseType
+                .GetMembers()
+                .OfType<IMethodSymbol>()
+                .Where(m => m is { IsAbstract: true, MethodKind: MethodKind.Ordinary })
+                .Where(abstractMethod =>
+                    !type.GetMembers(abstractMethod.Name)
+                        .OfType<IMethodSymbol>()
+                        .Any(m => ParametersMatch(m, abstractMethod, symbolComparer))
+                );
+
+            foreach (var abstractMethod in unimplemented)
+            {
+                spc.ReportDiagnostic(
+                    Diagnostic.Create(
+                        Descriptors.AbstractMemberNotImplemented,
+                        type.Locations[0],
+                        type.Name,
+                        baseType.Name,
+                        abstractMethod.Name
+                    )
+                );
+            }
+        }
+
+        private static bool ParametersMatch(
+            IMethodSymbol a,
+            IMethodSymbol b,
+            SymbolEqualityComparer comparer
+        )
+        {
+            if (a.Parameters.Length != b.Parameters.Length)
+                return false;
+            for (int i = 0; i < a.Parameters.Length; i++)
+            {
+                if (!comparer.Equals(a.Parameters[i].Type, b.Parameters[i].Type))
+                    return false;
+            }
+            return true;
+        }
+
+        private static TypeParameterSubstitutionRewriter? CreateTypeParameterSubstitution(
+            INamedTypeSymbol baseType
+        )
+        {
+            if (!baseType.IsGenericType)
                 return null;
 
-            var parameters = named.OriginalDefinition.TypeParameters;
-            var arguments = named.TypeArguments;
+            var parameters = baseType.OriginalDefinition.TypeParameters;
+            var arguments = baseType.TypeArguments;
             if (parameters.Length != arguments.Length)
             {
                 throw new InvalidOperationException(
-                    $"Type parameter/argument arity mismatch on '{named}': "
+                    $"Type parameter/argument arity mismatch on '{baseType}': "
                         + $"{parameters.Length} parameters vs {arguments.Length} arguments."
                 );
             }

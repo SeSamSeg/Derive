@@ -5,7 +5,10 @@ using Shouldly;
 namespace Derive.Tests.Collections
 {
     [Derive(typeof(DEnumerable<int>))]
-    internal partial class TestEnumerable { }
+    internal partial class TestEnumerable
+    {
+        public IEnumerator<int> GetEnumerator() => throw new NotImplementedException();
+    }
 
     public class EnumerableTests
     {

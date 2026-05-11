@@ -43,7 +43,7 @@ namespace Derive.Generator
                 case NameColonSyntax: // named argument label
                 case NameEqualsSyntax: // attribute / initializer name
                 case InvocationExpressionSyntax inv when inv.Expression == node: // bare call T(...)
-                case QualifiedCrefSyntax qc when qc.Member == node: // XML doc member ref
+                case NameMemberCrefSyntax nmc when nmc.Name == node: // XML doc member ref
                     return false;
                 default:
                     return true;
