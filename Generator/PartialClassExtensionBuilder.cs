@@ -1,12 +1,6 @@
-﻿using System.Collections.Immutable;
-using System.Diagnostics;
-using System.Text;
-using Derive.Generator;
+﻿using System.Diagnostics;
 using Derive.Generator.Utils;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Text;
 
 namespace Derive.Generator
 {
@@ -15,6 +9,7 @@ namespace Derive.Generator
         private readonly ITypeSymbol sourceType;
         private readonly List<Type> interfaces = [];
         private Action<IndentedStringBuilder> body = static _ => { };
+        private Action<IndentedStringBuilder>? typeBase;
 
         public PartialClassExtensionBuilder(ITypeSymbol sourceType)
         {
@@ -24,6 +19,12 @@ namespace Derive.Generator
         public PartialClassExtensionBuilder WithBody(Action<IndentedStringBuilder> body)
         {
             this.body = body;
+            return this;
+        }
+
+        public PartialClassExtensionBuilder WithTypeBase(Action<IndentedStringBuilder> typeBase)
+        {
+            this.typeBase = typeBase;
             return this;
         }
 
@@ -86,7 +87,7 @@ namespace Derive.Generator
             builder.AppendLine("}");
         }
 
-        public static void StartClassDeclaration(ITypeSymbol type, IndentedStringBuilder builder)
+        public void StartClassDeclaration(ITypeSymbol type, IndentedStringBuilder builder)
         {
             switch (type.DeclaredAccessibility)
             {
@@ -112,7 +113,12 @@ namespace Derive.Generator
                     throw new NotImplementedException();
             }
             builder.Append("partial class ");
-            builder.AppendLine(type.Name);
+            builder.Append(type.Name);
+            if (typeBase != null)
+            {
+                typeBase(builder);
+            }
+            builder.AppendLine();
         }
     }
 }

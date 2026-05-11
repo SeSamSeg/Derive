@@ -1,4 +1,6 @@
-﻿using Derive.Collections;
+﻿using System.Collections;
+using Derive.Collections;
+using Shouldly;
 
 namespace Derive.Tests.Collections
 {

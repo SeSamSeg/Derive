@@ -180,8 +180,10 @@ namespace Derive.Generator
             var membersToCopy = baseTypeSyntax
                 .Members.OfType<MethodDeclarationSyntax>()
                 .ToArray();
+            var baseList = baseTypeSyntax
+                .BaseList;
 
-            if (membersToCopy.Length == 0)
+            if (membersToCopy.Length == 0 && baseList == null)
                 return;
 
             var builder = new IndentedStringBuilder();
@@ -201,8 +203,13 @@ namespace Derive.Generator
                     {
                         builder.AppendLine(m.ToString());
                     }
-                })
-                .AppendOnto(builder);
+                }).WithTypeBase(builder =>
+                {
+                    if (baseList != null)
+                    {
+                        builder.Append(baseList.ToString());
+                    }
+                }).AppendOnto(builder);
 
             spc.AddSource(
                 $"{type.Name}_{baseType.Name}_Derived.g.cs",
