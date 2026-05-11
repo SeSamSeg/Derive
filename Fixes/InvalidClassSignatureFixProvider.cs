@@ -18,14 +18,15 @@ namespace Derive.Fixes
     public class InvalidClassSignatureFixProvider : CodeFixProvider
     {
         public sealed override ImmutableArray<string> FixableDiagnosticIds { get; } =
-        [DeriveDiagnosticsConstants.InvalidClassSignatureId];
+        [DiagnosticIds.InvalidClassSignature];
 
         public sealed override FixAllProvider GetFixAllProvider() =>
             WellKnownFixAllProviders.BatchFixer;
 
         public sealed override async Task RegisterCodeFixesAsync(CodeFixContext context)
         {
-            SyntaxNode root = await GetRoot(context.Document, context.CancellationToken)
+            SyntaxNode root = await CodeFixHelpers
+                .GetRootAsync(context.Document, context.CancellationToken)
                 .ConfigureAwait(false);
             var diagnostic = context.Diagnostics.Single();
             var classDeclaration =
@@ -79,15 +80,9 @@ namespace Derive.Fixes
             modifiers = modifiers.Insert(insertPos, partialToken);
 
             var newClassDecl = classDeclaration.WithModifiers(modifiers);
-            SyntaxNode root = await GetRoot(document, token).ConfigureAwait(false);
+            SyntaxNode root = await CodeFixHelpers.GetRootAsync(document, token).ConfigureAwait(false);
             var newRoot = root.ReplaceNode(classDeclaration, newClassDecl);
             return document.WithSyntaxRoot(newRoot);
-        }
-
-        private static async Task<SyntaxNode> GetRoot(Document document, CancellationToken token)
-        {
-            return await document.GetSyntaxRootAsync(token).ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Could not get root");
         }
     }
 }

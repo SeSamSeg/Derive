@@ -347,20 +347,40 @@ namespace Derive.Generator
                     !type.GetMembers(abstractMethod.Name)
                         .OfType<IMethodSymbol>()
                         .Any(m => ParametersMatch(m, abstractMethod, symbolComparer))
-                );
+                )
+                .ToArray();
 
-            foreach (var abstractMethod in unimplemented)
-            {
-                spc.ReportDiagnostic(
-                    Diagnostic.Create(
-                        Descriptors.AbstractMemberNotImplemented,
-                        type.Locations[0],
-                        type.Name,
-                        baseType.Name,
-                        abstractMethod.Name
-                    )
-                );
-            }
+            if (unimplemented.Length == 0)
+                return;
+
+            // Use the original definition's doc id: constructed forms like
+            // `T:DEnumerable{System.Int32}` aren't valid declaration ids and don't round-trip
+            // through GetFirstSymbolForDeclarationId.
+            var typeArgDocIds = string.Join(
+                ";",
+                baseType.TypeArguments.Select(t => t.GetDocumentationCommentId() ?? string.Empty)
+            );
+            var memberDocIds = string.Join(
+                ";",
+                unimplemented.Select(m => m.OriginalDefinition.GetDocumentationCommentId() ?? string.Empty)
+            );
+            var properties = ImmutableDictionary<string, string?>.Empty
+                .Add(DiagnosticProperties.BaseTypeDocId, baseType.OriginalDefinition.GetDocumentationCommentId() ?? string.Empty)
+                .Add(DiagnosticProperties.BaseTypeName, baseType.Name)
+                .Add(DiagnosticProperties.TypeArgDocIds, typeArgDocIds)
+                .Add(DiagnosticProperties.MemberDocIds, memberDocIds);
+
+            var memberList = string.Join(", ", unimplemented.Select(m => $"'{m.Name}'"));
+            spc.ReportDiagnostic(
+                Diagnostic.Create(
+                    Descriptors.AbstractMemberNotImplemented,
+                    type.Locations[0],
+                    properties,
+                    type.Name,
+                    baseType.Name,
+                    memberList
+                )
+            );
         }
 
         private static bool ParametersMatch(
