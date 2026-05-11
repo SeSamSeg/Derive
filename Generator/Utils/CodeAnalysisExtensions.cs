@@ -1,5 +1,7 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Derive.Generator.Utils
 {
@@ -28,6 +30,27 @@ namespace Derive.Generator.Utils
             var simpleName = (attribute.Name is GenericNameSyntax g ? g.Identifier.Text : attribute.Name.ToString()).AsSpan();
             return simpleName.Equals(fullName, StringComparison.Ordinal)
                 || simpleName.Equals(fullName[..^AttributeSuffixLength], StringComparison.Ordinal);
+        }
+
+        public static bool HasCompatibleMember(this INamedTypeSymbol type, ISymbol member)
+        {
+            if (member is IPropertySymbol)
+                return type.GetMembers(member.Name).OfType<IPropertySymbol>().Any();
+            if (member is IMethodSymbol method)
+                return type.GetMembers(member.Name).OfType<IMethodSymbol>()
+                    .Any(m => ParametersMatch(m, method));
+            return false;
+        }
+
+        public static bool ParametersMatch(IMethodSymbol a, IMethodSymbol b)
+        {
+            if (a.Parameters.Length != b.Parameters.Length)
+                return false;
+            var comparer = SymbolEqualityComparer.Default;
+            for (int i = 0; i < a.Parameters.Length; i++)
+                if (!comparer.Equals(a.Parameters[i].Type, b.Parameters[i].Type))
+                    return false;
+            return true;
         }
 
         public static TypeDeclarationSyntax GetTypeSyntax(

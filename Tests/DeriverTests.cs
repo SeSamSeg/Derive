@@ -27,17 +27,28 @@ namespace Derive.Tests
     {
         public virtual bool VirtualMethod() => true;
 
+        public virtual bool VirtualMethod(int x) => true;
+
         public virtual bool VirtualProperty => true;
     }
 
     [Derive<VirtualBase>]
-    internal partial class VirtualSub { }
+    internal partial class VirtualSub
+    {
+        // same name as base virtuals but different argument — base copies should still happen
+        public bool VirtualMethod(string x) => false;
+    }
 
     [Derive<VirtualBase>]
     internal partial class VirtualOverriddenSub
     {
+        // overrides the no-arg overload — base copy should be suppressed
         public bool VirtualMethod() => false;
 
+        // same name as a base virtual but different argument — base copy of VirtualMethod(int) should still happen
+        public bool VirtualMethod(string x) => false;
+
+        // overrides the property — base copy should be suppressed
         public bool VirtualProperty => false;
     }
 
@@ -120,6 +131,8 @@ namespace Derive.Tests
         {
             var sut = new VirtualSub();
             sut.VirtualMethod().ShouldBeTrue();
+            sut.VirtualMethod(0).ShouldBeTrue();
+            sut.VirtualMethod("x").ShouldBeFalse();
             sut.VirtualProperty.ShouldBeTrue();
         }
 
@@ -128,6 +141,8 @@ namespace Derive.Tests
         {
             var sut = new VirtualOverriddenSub();
             sut.VirtualMethod().ShouldBeFalse();
+            sut.VirtualMethod(0).ShouldBeTrue();
+            sut.VirtualMethod("x").ShouldBeFalse();
             sut.VirtualProperty.ShouldBeFalse();
         }
     }

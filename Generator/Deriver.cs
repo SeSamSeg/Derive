@@ -199,11 +199,16 @@ namespace Derive.Generator
             }
 
             var usingsToCopy = root.ChildNodes().OfType<UsingDirectiveSyntax>().ToArray();
+            var virtualOverriddenSpans = new HashSet<TextSpan>(
+                baseType.GetMembers()
+                    .Where(m => m.IsVirtual && type.HasCompatibleMember(m))
+                    .SelectMany(m => m.DeclaringSyntaxReferences)
+                    .Select(r => r.Span));
             var membersToCopy = baseTypeSyntax
                 .Members
                 .Where(m => m is MethodDeclarationSyntax or PropertyDeclarationSyntax)
                 .Where(m => !m.Modifiers.Any(t => t.IsKind(SyntaxKind.AbstractKeyword)))
-                .Where(m => !(m.Modifiers.Any(t => t.IsKind(SyntaxKind.VirtualKeyword)) && IsDefinedOn(m, type)))
+                .Where(m => !virtualOverriddenSpans.Contains(m.Span))
                 .ToArray();
             var baseList = baseTypeSyntax
                 .BaseList;
@@ -355,16 +360,11 @@ namespace Derive.Generator
             INamedTypeSymbol baseType
         )
         {
-            var symbolComparer = SymbolEqualityComparer.Default;
             var unimplemented = baseType
                 .GetMembers()
                 .OfType<IMethodSymbol>()
                 .Where(m => m is { IsAbstract: true, MethodKind: MethodKind.Ordinary })
-                .Where(abstractMethod =>
-                    !type.GetMembers(abstractMethod.Name)
-                        .OfType<IMethodSymbol>()
-                        .Any(m => ParametersMatch(m, abstractMethod, symbolComparer))
-                )
+                .Where(abstractMethod => !type.HasCompatibleMember(abstractMethod))
                 .ToArray();
 
             if (unimplemented.Length == 0)
@@ -400,22 +400,6 @@ namespace Derive.Generator
             );
         }
 
-        private static bool ParametersMatch(
-            IMethodSymbol a,
-            IMethodSymbol b,
-            SymbolEqualityComparer comparer
-        )
-        {
-            if (a.Parameters.Length != b.Parameters.Length)
-                return false;
-            for (int i = 0; i < a.Parameters.Length; i++)
-            {
-                if (!comparer.Equals(a.Parameters[i].Type, b.Parameters[i].Type))
-                    return false;
-            }
-            return true;
-        }
-
         private static TypeParameterSubstitutionRewriter? CreateTypeParameterSubstitution(
             INamedTypeSymbol baseType
         )
@@ -448,15 +432,5 @@ namespace Derive.Generator
             return map.Count == 0 ? null : new TypeParameterSubstitutionRewriter(map);
         }
 
-        private static bool IsDefinedOn(MemberDeclarationSyntax m, INamedTypeSymbol type)
-        {
-            var name = m switch
-            {
-                MethodDeclarationSyntax method => method.Identifier.Text,
-                PropertyDeclarationSyntax prop => prop.Identifier.Text,
-                _ => null
-            };
-            return name != null && type.GetMembers(name).Length > 0;
-        }
     }
 }
