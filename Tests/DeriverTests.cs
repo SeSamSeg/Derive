@@ -19,6 +19,21 @@ namespace Derive.Tests
         {
             return true;
         }
+
+        public bool Property => true;
+    }
+
+    internal abstract class AbstractBase
+    {
+        public abstract int Value { get; }
+
+        public int Double() => Value * 2;
+    }
+
+    [Derive<AbstractBase>]
+    internal partial class AbstractSub
+    {
+        public int Value => 21;
     }
 
     public partial class DeriverTests
@@ -66,6 +81,20 @@ namespace Derive.Tests
         {
             var sut = new UsingNamespace();
             sut.NonThrowingMember();
+        }
+
+        [Fact]
+        public void Derives_property()
+        {
+            var sut = new PublicSub();
+            sut.Property.ShouldBeTrue();
+        }
+
+        [Fact]
+        public void Abstract_base()
+        {
+            var sut = new AbstractSub();
+            sut.Double().ShouldBe(42);
         }
     }
 }
