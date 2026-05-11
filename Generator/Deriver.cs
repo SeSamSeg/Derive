@@ -50,53 +50,63 @@ namespace Derive.Generator
                     throw new NotImplementedException("More than one Derive attribute detected");
             }
 
-            if (attribute.ArgumentList == null)
-            {
-                // Nothing to derive from
-                return null;
-            }
-
             var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
+            var baseTypes = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
 
-            // Extract the type argument of Derive(typeof(SomeBase))
-            int derivedCount = attribute.ArgumentList.Arguments.Count;
-            if (derivedCount == 0)
-                return null;
-
-            var baseTypes = ImmutableArray.CreateBuilder<INamedTypeSymbol>(derivedCount);
-            for (int i = 0; i < attribute.ArgumentList.Arguments.Count; i++)
+            if (attribute.Name is GenericNameSyntax genericAttrName)
             {
-                AttributeArgumentSyntax arg = attribute.ArgumentList.Arguments[i];
-                if (arg.Expression is not TypeOfExpressionSyntax tos)
+                if (attribute.ArgumentList != null)
+                    throw new InvalidOperationException($"Generic attribute '{genericAttrName}' should not have an argument list");
+
+                // [Derive<T>] form — type is the generic type argument of the attribute itself
+                foreach (var typeArg in genericAttrName.TypeArgumentList.Arguments)
                 {
-                    diagnostics.Add(
-                        Diagnostic.Create(
-                            Descriptors.InvalidDeriveArguments,
-                            classDecl.GetLocation(),
-                            "use TypeOf expressions as arguments"
-                        )
-                    );
-                    continue;
+                    var typeInfo = context.SemanticModel.GetTypeInfo(typeArg).Type;
+                    if (typeInfo is null)
+                        throw new InvalidOperationException($"Could not process type argument {typeArg}");
+                    if (typeInfo is not INamedTypeSymbol named)
+                    {
+                        diagnostics.Add(Diagnostic.Create(Descriptors.InvalidDeriveArguments, classDecl.GetLocation(), "use a named type as argument"));
+                        continue;
+                    }
+                    baseTypes.Add(named);
                 }
-                var typeInfo = context.SemanticModel.GetTypeInfo(tos.Type).Type;
-                if (typeInfo is null)
+            }
+            else
+            {
+                // [Derive(typeof(T))] form
+                if (attribute.ArgumentList is not { Arguments.Count: > 0 } argList)
+                    return null;
+
+                foreach (AttributeArgumentSyntax arg in argList.Arguments)
                 {
-                    throw new InvalidOperationException(
-                        $"Could not process typeof expression {tos}"
-                    );
+                    if (arg.Expression is not TypeOfExpressionSyntax tos)
+                    {
+                        diagnostics.Add(
+                            Diagnostic.Create(
+                                Descriptors.InvalidDeriveArguments,
+                                classDecl.GetLocation(),
+                                "use TypeOf expressions as arguments"
+                            )
+                        );
+                        continue;
+                    }
+                    var typeInfo = context.SemanticModel.GetTypeInfo(tos.Type).Type;
+                    if (typeInfo is null)
+                        throw new InvalidOperationException($"Could not process typeof expression {tos}");
+                    if (typeInfo is not INamedTypeSymbol named)
+                    {
+                        diagnostics.Add(
+                            Diagnostic.Create(
+                                Descriptors.InvalidDeriveArguments,
+                                classDecl.GetLocation(),
+                                "use a named type as argument"
+                            )
+                        );
+                        continue;
+                    }
+                    baseTypes.Add(named);
                 }
-                if (typeInfo is not INamedTypeSymbol named)
-                {
-                    diagnostics.Add(
-                        Diagnostic.Create(
-                            Descriptors.InvalidDeriveArguments,
-                            classDecl.GetLocation(),
-                            "use a named type as argument"
-                        )
-                    );
-                    continue;
-                }
-                baseTypes.Add(named);
             }
 
             if (context.SemanticModel.GetDeclaredSymbol(classDecl) is not INamedTypeSymbol classType)

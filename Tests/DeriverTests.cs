@@ -8,6 +8,9 @@ namespace Derive.Tests
     [Derive(typeof(Base))]
     internal partial class InternalSub { }
 
+    [Derive<Base>]
+    internal partial class GenericSyntaxSub { }
+
     internal class Base
     {
         public bool Expression() => true;
@@ -25,6 +28,14 @@ namespace Derive.Tests
 
         [Derive(typeof(BaseUsingNamespace))]
         internal partial class UsingNamespace { }
+
+        [Fact]
+        public void Generic_attribute_syntax()
+        {
+            var sut = new GenericSyntaxSub();
+            sut.Expression().ShouldBeTrue();
+            sut.Body().ShouldBeTrue();
+        }
 
         [Fact]
         public void Namespaced_on_public()

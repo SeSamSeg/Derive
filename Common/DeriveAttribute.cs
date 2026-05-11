@@ -16,4 +16,10 @@ namespace Derive
 
         public ImmutableArray<Type> BaseTypes { get; }
     }
+
+    [AttributeUsage(AttributeTargets.Class)]
+    public class DeriveAttribute<T> : DeriveAttribute
+    {
+        public DeriveAttribute() : base(typeof(T)) { }
+    }
 }

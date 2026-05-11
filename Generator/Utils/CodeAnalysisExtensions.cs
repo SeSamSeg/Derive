@@ -10,31 +10,24 @@ namespace Derive.Generator.Utils
         ) => source.SelectMany((item, _) => item != null ? [item] : (IEnumerable<TSource>)[]);
 
         public static bool IsOfType<T>(this AttributeSyntax attribute)
-            where T : Attribute
-        {
-            const int AttributeNameLength = 9; // Length of the Attribute type name
-            var name = attribute.Name.ToString();
-            var match = typeof(T).Name;
-            return name.Equals(match, StringComparison.Ordinal)
-                || name.Equals(match[..^AttributeNameLength], StringComparison.Ordinal);
-        }
+            where T : Attribute => AttributeNameMatches(attribute, typeof(T).Name.AsSpan());
 
         public static IEnumerable<AttributeSyntax> OfAttributeType<T>(
             this IEnumerable<AttributeSyntax> attribute
         )
             where T : Attribute
         {
-            const int AttributeNameLength = 9; // Length of the Attribute type name
             string attributeName = typeof(T).Name;
-            return attribute.Where(a =>
-            {
-                var aName = a.Name.ToString().AsSpan();
-                return aName.Equals(typeof(T).Name, StringComparison.Ordinal)
-                    || aName.Equals(
-                        typeof(T).Name.AsSpan()[..^AttributeNameLength],
-                        StringComparison.Ordinal
-                    );
-            });
+            return attribute.Where(a => AttributeNameMatches(a, attributeName));
+        }
+
+        // Matches [Name] and [NameAttribute]; strips generic args from [Name<T>] before comparing.
+        private static bool AttributeNameMatches(AttributeSyntax attribute, ReadOnlySpan<char> fullName)
+        {
+            const int AttributeSuffixLength = 9;
+            var simpleName = (attribute.Name is GenericNameSyntax g ? g.Identifier.Text : attribute.Name.ToString()).AsSpan();
+            return simpleName.Equals(fullName, StringComparison.Ordinal)
+                || simpleName.Equals(fullName[..^AttributeSuffixLength], StringComparison.Ordinal);
         }
 
         public static TypeDeclarationSyntax GetTypeSyntax(
