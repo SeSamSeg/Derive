@@ -32,86 +32,75 @@ namespace Derive.Generator
         {
             var classDecl = (ClassDeclarationSyntax)context.Node;
 
-            // Look for an attribute named "Derive"
-            var attributes = classDecl
-                .AttributeLists.SelectMany(al => al.Attributes)
-                .OfAttributeType<DeriveAttribute>()
-                .ToArray();
-            AttributeSyntax attribute;
-            switch (attributes.Length)
-            {
-                case 0:
-                    return null;
-                case 1:
-                    attribute = attributes[0];
-                    break;
-                default:
-                    // TODO: Diagnostics?
-                    throw new NotImplementedException("More than one Derive attribute detected");
-            }
+            if (context.SemanticModel.GetDeclaredSymbol(classDecl) is not INamedTypeSymbol classType)
+                return null;
 
             var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
-            var baseTypes = ImmutableArray.CreateBuilder<INamedTypeSymbol>();
+            var baseTypesBuilder = ImmutableArray.CreateBuilder<BaseTypeInfo>();
 
-            if (attribute.Name is GenericNameSyntax genericAttrName)
-            {
-                if (attribute.ArgumentList != null)
-                    throw new InvalidOperationException($"Generic attribute '{genericAttrName}' should not have an argument list");
+            // Get all DeriveAttribute instances from the symbol
+            var deriveAttrs = classType.GetAttributes()
+                .Where(a => a.AttributeClass?.Name == "DeriveAttribute")
+                .ToArray();
 
-                // [Derive<T>] form — type is the generic type argument of the attribute itself
-                foreach (var typeArg in genericAttrName.TypeArgumentList.Arguments)
-                {
-                    var typeInfo = context.SemanticModel.GetTypeInfo(typeArg).Type;
-                    if (typeInfo is null)
-                        throw new InvalidOperationException($"Could not process type argument {typeArg}");
-                    if (typeInfo is not INamedTypeSymbol named)
-                    {
-                        diagnostics.Add(Diagnostic.Create(Descriptors.InvalidDeriveArguments, classDecl.GetLocation(), "use a named type as argument"));
-                        continue;
-                    }
-                    baseTypes.Add(named);
-                }
-            }
-            else
-            {
-                // [Derive(typeof(T))] form
-                if (attribute.ArgumentList is not { Arguments.Count: > 0 } argList)
-                    return null;
-
-                foreach (AttributeArgumentSyntax arg in argList.Arguments)
-                {
-                    if (arg.Expression is not TypeOfExpressionSyntax tos)
-                    {
-                        diagnostics.Add(
-                            Diagnostic.Create(
-                                Descriptors.InvalidDeriveArguments,
-                                classDecl.GetLocation(),
-                                "use TypeOf expressions as arguments"
-                            )
-                        );
-                        continue;
-                    }
-                    var typeInfo = context.SemanticModel.GetTypeInfo(tos.Type).Type;
-                    if (typeInfo is null)
-                        throw new InvalidOperationException($"Could not process typeof expression {tos}");
-                    if (typeInfo is not INamedTypeSymbol named)
-                    {
-                        diagnostics.Add(
-                            Diagnostic.Create(
-                                Descriptors.InvalidDeriveArguments,
-                                classDecl.GetLocation(),
-                                "use a named type as argument"
-                            )
-                        );
-                        continue;
-                    }
-                    baseTypes.Add(named);
-                }
-            }
-
-            if (context.SemanticModel.GetDeclaredSymbol(classDecl) is not INamedTypeSymbol classType)
-            {
+            if (deriveAttrs.Length == 0)
                 return null;
+
+            foreach (var attr in deriveAttrs)
+            {
+                INamedTypeSymbol baseType;
+
+                if (attr.AttributeClass?.IsGenericType == true)
+                {
+                    // [Derive<T>] form — type from generic attribute argument
+                    if (attr.AttributeClass.TypeArguments.Length != 1)
+                    {
+                        diagnostics.Add(Diagnostic.Create(Descriptors.InvalidDeriveArguments, classDecl.GetLocation(), "generic Derive attribute must have exactly one type argument"));
+                        continue;
+                    }
+                    if (attr.AttributeClass.TypeArguments[0] is not INamedTypeSymbol genericType)
+                    {
+                        diagnostics.Add(Diagnostic.Create(Descriptors.InvalidDeriveArguments, classDecl.GetLocation(), "Derive type argument must be a named type"));
+                        continue;
+                    }
+                    baseType = genericType;
+                }
+                else
+                {
+                    // [Derive(typeof(T))] form — type from constructor argument
+                    if (attr.ConstructorArguments.Length != 1)
+                    {
+                        diagnostics.Add(Diagnostic.Create(Descriptors.InvalidDeriveArguments, classDecl.GetLocation(), "Derive attribute must have a single Type argument"));
+                        continue;
+                    }
+                    if (attr.ConstructorArguments[0].Value is not INamedTypeSymbol ctorType)
+                    {
+                        diagnostics.Add(Diagnostic.Create(Descriptors.InvalidDeriveArguments, classDecl.GetLocation(), "Derive constructor argument must be a type"));
+                        continue;
+                    }
+                    baseType = ctorType;
+                }
+
+                // Extract TypeParams from named arguments (both generic and non-generic forms can have this)
+                var typeParamsBuilder = ImmutableArray.CreateBuilder<string>();
+                foreach (var namedArg in attr.NamedArguments)
+                {
+                    if (namedArg.Key == "TypeParams")
+                    {
+                        foreach (var val in namedArg.Value.Values)
+                        {
+                            if (val.Value is string strVal)
+                                typeParamsBuilder.Add(strVal);
+                        }
+                    }
+                    else
+                    {
+                        diagnostics.Add(Diagnostic.Create(Descriptors.InvalidDeriveArguments, classDecl.GetLocation(), $"unknown named argument '{namedArg.Key}'"));
+                        continue;
+                    }
+                }
+
+                baseTypesBuilder.Add(new BaseTypeInfo(baseType, typeParamsBuilder.ToImmutable()));
             }
 
             if (!classDecl.Modifiers.Any(t => t.Text.Equals("partial", StringComparison.Ordinal)))
@@ -127,7 +116,8 @@ namespace Derive.Generator
 
             var classNamespace = GetNamespace(classDecl);
 
-            return new(classType, baseTypes.ToImmutable(), diagnostics.ToImmutable());
+            var derivedClass = new DerivedClassInfo(classType, classDecl.BaseList);
+            return new(derivedClass, baseTypesBuilder.ToImmutable(), diagnostics.ToImmutable());
         }
 
         private static string? GetNamespace(ClassDeclarationSyntax classDecl)
@@ -165,18 +155,42 @@ namespace Derive.Generator
             {
                 spc.ReportDiagnostic(diagnostic);
             }
-            foreach (var baseType in classDeriveInfo.BaseTypes)
+            foreach (var baseTypeInfo in classDeriveInfo.BaseTypes)
             {
-                GenerateForBase(spc, classDeriveInfo.Type, baseType);
+                GenerateForBase(spc, classDeriveInfo.Class, baseTypeInfo);
             }
         }
 
         private static void GenerateForBase(
             SourceProductionContext spc,
-            INamedTypeSymbol type,
-            INamedTypeSymbol baseType
+            DerivedClassInfo derivedClass,
+            BaseTypeInfo baseTypeInfo
         )
         {
+            var type = derivedClass.Type;
+            var userProvidedBases = derivedClass.UserProvidedBases;
+            var baseType = baseTypeInfo.Type;
+
+            // Handle unbound generics: construct by mapping parameter names (e.g., DEnumerable<> with typeParams: "T" → DEnumerable<T>)
+            if (baseType.IsGenericType && baseType.TypeArguments.Length == 0)
+            {
+                var typeParams = baseTypeInfo.TypeParams;
+                if (typeParams.Length != baseType.OriginalDefinition.TypeParameters.Length)
+                    return;
+
+                var baseConstructArgs = new ITypeSymbol[typeParams.Length];
+                for (int i = 0; i < typeParams.Length; i++)
+                {
+                    var paramName = typeParams[i];
+                    var typeParam = type.TypeParameters.FirstOrDefault(tp => tp.Name == paramName);
+                    if (typeParam == null)
+                        return; // TODO: add diagnostic for missing type parameter
+                    baseConstructArgs[i] = typeParam;
+                }
+
+                baseType = baseType.Construct(baseConstructArgs);
+            }
+
             SyntaxNode root;
             TypeDeclarationSyntax baseTypeSyntax;
 
@@ -245,10 +259,26 @@ namespace Derive.Generator
                     }
                 }).WithTypeBase(builder =>
                 {
-                    if (baseList != null)
+                    var parts = new List<string>();
+
+                    // Add user's base class (if it's not an interface)
+                    if (type.BaseType is not null and not { TypeKind: TypeKind.Interface })
                     {
-                        var node = typeArgRewriter?.Visit(baseList) ?? baseList;
-                        builder.Append(node.ToString());
+                        parts.Add(type.BaseType.ToDisplayString());
+                    }
+
+                    // Add Derive base's interfaces
+                    if (baseList?.Types is not null)
+                    {
+                        parts.AddRange(
+                            baseList.Types.Select(bt => (typeArgRewriter?.Visit(bt) ?? bt).ToString())
+                        );
+                    }
+
+                    if (parts.Count > 0)
+                    {
+                        builder.Append(" : ");
+                        builder.Append(string.Join(", ", parts));
                     }
                 }).AppendOnto(builder);
 
@@ -348,9 +378,19 @@ namespace Derive.Generator
                 );
         }
 
-        private sealed record ClassDeriveInfo(
+        private sealed record BaseTypeInfo(
             INamedTypeSymbol Type,
-            ImmutableArray<INamedTypeSymbol> BaseTypes,
+            ImmutableArray<string> TypeParams
+        );
+
+        private sealed record DerivedClassInfo(
+            INamedTypeSymbol Type,
+            BaseListSyntax? UserProvidedBases
+        );
+
+        private sealed record ClassDeriveInfo(
+            DerivedClassInfo Class,
+            ImmutableArray<BaseTypeInfo> BaseTypes,
             ImmutableArray<Diagnostic> Diagnostics
         );
 

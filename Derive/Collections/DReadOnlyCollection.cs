@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Derive;
 
 namespace Derive.Collections
 {
@@ -29,9 +30,9 @@ namespace Derive.Collections
     /// </code>
     /// </example>
     [Base]
-    public abstract class DReadOnlyCollection<T>
-        : DEnumerable<T>,
-            IReadOnlyCollection<T>,
+    [Derive(typeof(DEnumerable<>), TypeParams = ["T"])]
+    public abstract partial class DReadOnlyCollection<T>
+        : IReadOnlyCollection<T>,
             ICollection<T>,
             ICollection
     {

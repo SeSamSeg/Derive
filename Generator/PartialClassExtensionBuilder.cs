@@ -6,12 +6,12 @@ namespace Derive.Generator
 {
     public class PartialClassExtensionBuilder
     {
-        private readonly ITypeSymbol sourceType;
+        private readonly INamedTypeSymbol sourceType;
         private readonly List<Type> interfaces = [];
         private Action<IndentedStringBuilder> body = static _ => { };
         private Action<IndentedStringBuilder>? typeBase;
 
-        public PartialClassExtensionBuilder(ITypeSymbol sourceType)
+        public PartialClassExtensionBuilder(INamedTypeSymbol sourceType)
         {
             this.sourceType = sourceType;
         }
@@ -87,7 +87,7 @@ namespace Derive.Generator
             builder.AppendLine("}");
         }
 
-        public void StartClassDeclaration(ITypeSymbol type, IndentedStringBuilder builder)
+        public void StartClassDeclaration(INamedTypeSymbol type, IndentedStringBuilder builder)
         {
             switch (type.DeclaredAccessibility)
             {
@@ -114,6 +114,12 @@ namespace Derive.Generator
             }
             builder.Append("partial class ");
             builder.Append(type.Name);
+            if (type.IsGenericType)
+            {
+                builder.Append("<");
+                builder.Append(string.Join(", ", type.TypeParameters.Select(tp => tp.Name)));
+                builder.Append(">");
+            }
             if (typeBase != null)
             {
                 typeBase(builder);

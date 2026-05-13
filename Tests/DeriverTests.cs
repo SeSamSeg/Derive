@@ -11,6 +11,9 @@ namespace Derive.Tests
     [Derive<Base>]
     internal partial class GenericSyntaxSub { }
 
+    [Derive(typeof(GenericBase<>), TypeParams = ["int"])]
+    internal partial class TestTypeParams { }
+
     internal class Base
     {
         public bool Expression() => true;
@@ -21,6 +24,11 @@ namespace Derive.Tests
         }
 
         public bool Property => true;
+    }
+
+    internal class GenericBase<T>
+    {
+        public virtual T GetValue() => default!;
     }
 
     internal class VirtualBase
@@ -63,6 +71,21 @@ namespace Derive.Tests
     internal partial class AbstractSub
     {
         public int Value => 21;
+    }
+
+    [Derive<AbstractBase>]
+    internal abstract partial class DerivedAbstractBase
+    {
+        public int Value => 21;
+        public abstract string Name { get; }
+    }
+
+    // Tests that the generator handles transitive [Derive]: applies both [Derive<DerivedAbstractBase>]
+    // and its inherited [Derive<AbstractBase>], while also allowing an unrelated .NET base class (Exception).
+    [Derive<DerivedAbstractBase>]
+    internal partial class TransitiveSub : Exception
+    {
+        public string Name => "test";
     }
 
     public partial class DeriverTests
@@ -144,6 +167,15 @@ namespace Derive.Tests
             sut.VirtualMethod(0).ShouldBeTrue();
             sut.VirtualMethod("x").ShouldBeFalse();
             sut.VirtualProperty.ShouldBeFalse();
+        }
+
+        [Fact]
+        public void Transitive_inheritance_pulls_all_members()
+        {
+            var sut = new TransitiveSub();
+            sut.Value.ShouldBe(21);
+            sut.Name.ShouldBe("test");
+            sut.Double().ShouldBe(42);
         }
     }
 }

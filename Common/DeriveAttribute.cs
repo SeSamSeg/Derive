@@ -1,23 +1,21 @@
-﻿using System;
-using System.Collections.Immutable;
-
-namespace Derive
+﻿namespace Derive
 {
     /// <summary>
     /// Derive from base classes.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Class)]
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
     public class DeriveAttribute : Attribute
     {
-        public DeriveAttribute(params Type[] baseTypes)
+        public DeriveAttribute(Type baseType)
         {
-            BaseTypes = [.. baseTypes];
+            BaseType = baseType;
         }
 
-        public ImmutableArray<Type> BaseTypes { get; }
+        public Type BaseType { get; }
+        public string[]? TypeParams { get; set; }
     }
 
-    [AttributeUsage(AttributeTargets.Class)]
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
     public class DeriveAttribute<T> : DeriveAttribute
     {
         public DeriveAttribute() : base(typeof(T)) { }
