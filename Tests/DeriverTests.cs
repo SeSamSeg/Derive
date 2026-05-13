@@ -3,13 +3,13 @@
 namespace Derive.Tests
 {
     [Derive(typeof(Base))]
-    public partial class PublicSub { }
+    public partial class PublicDerived { }
 
     [Derive(typeof(Base))]
-    internal partial class InternalSub { }
+    internal partial class InternalDerived { }
 
     [Derive<Base>]
-    internal partial class GenericSyntaxSub { }
+    internal partial class GenericSyntaxDerived { }
 
     [Derive(typeof(GenericBase<>), TypeParams = ["int"])]
     internal partial class TestTypeParams { }
@@ -41,14 +41,14 @@ namespace Derive.Tests
     }
 
     [Derive<VirtualBase>]
-    internal partial class VirtualSub
+    internal partial class VirtualDerived
     {
         // same name as base virtuals but different argument — base copies should still happen
         public bool VirtualMethod(string x) => false;
     }
 
     [Derive<VirtualBase>]
-    internal partial class VirtualOverriddenSub
+    internal partial class VirtualOverriddenDerived
     {
         // overrides the no-arg overload — base copy should be suppressed
         public bool VirtualMethod() => false;
@@ -68,7 +68,7 @@ namespace Derive.Tests
     }
 
     [Derive<AbstractBase>]
-    internal partial class AbstractSub
+    internal partial class AbstractDerived
     {
         public int Value => 21;
     }
@@ -83,7 +83,7 @@ namespace Derive.Tests
     // Tests that the generator handles transitive [Derive]: applies both [Derive<DerivedAbstractBase>]
     // and its inherited [Derive<AbstractBase>], while also allowing an unrelated .NET base class (Exception).
     [Derive<DerivedAbstractBase>]
-    internal partial class TransitiveSub : Exception
+    internal partial class TransitiveDerived : Exception
     {
         public string Name => "test";
     }
@@ -91,7 +91,7 @@ namespace Derive.Tests
     public partial class DeriverTests
     {
         [Derive(typeof(Base))]
-        internal partial class PrivateSub { }
+        internal partial class PrivateDerived { }
 
         [Derive(typeof(BaseUsingNamespace))]
         internal partial class UsingNamespace { }
@@ -99,7 +99,7 @@ namespace Derive.Tests
         [Fact]
         public void Generic_attribute_syntax()
         {
-            var sut = new GenericSyntaxSub();
+            var sut = new GenericSyntaxDerived();
             sut.Expression().ShouldBeTrue();
             sut.Body().ShouldBeTrue();
         }
@@ -107,7 +107,7 @@ namespace Derive.Tests
         [Fact]
         public void Namespaced_on_public()
         {
-            var sut = new PublicSub();
+            var sut = new PublicDerived();
             sut.Expression().ShouldBeTrue();
             sut.Body().ShouldBeTrue();
         }
@@ -115,7 +115,7 @@ namespace Derive.Tests
         [Fact]
         public void Namespaced_on_internal()
         {
-            var sut = new InternalSub();
+            var sut = new InternalDerived();
             sut.Expression().ShouldBeTrue();
             sut.Body().ShouldBeTrue();
         }
@@ -123,7 +123,7 @@ namespace Derive.Tests
         [Fact]
         public void Private()
         {
-            var sut = new PrivateSub();
+            var sut = new PrivateDerived();
             sut.Expression().ShouldBeTrue();
             sut.Body().ShouldBeTrue();
         }
@@ -138,21 +138,21 @@ namespace Derive.Tests
         [Fact]
         public void Derives_property()
         {
-            var sut = new PublicSub();
+            var sut = new PublicDerived();
             sut.Property.ShouldBeTrue();
         }
 
         [Fact]
         public void Abstract_base()
         {
-            var sut = new AbstractSub();
+            var sut = new AbstractDerived();
             sut.Double().ShouldBe(42);
         }
 
         [Fact]
         public void Virtual_copies_when_not_implemented()
         {
-            var sut = new VirtualSub();
+            var sut = new VirtualDerived();
             sut.VirtualMethod().ShouldBeTrue();
             sut.VirtualMethod(0).ShouldBeTrue();
             sut.VirtualMethod("x").ShouldBeFalse();
@@ -162,7 +162,7 @@ namespace Derive.Tests
         [Fact]
         public void Virtual_overridden_when_implemented()
         {
-            var sut = new VirtualOverriddenSub();
+            var sut = new VirtualOverriddenDerived();
             sut.VirtualMethod().ShouldBeFalse();
             sut.VirtualMethod(0).ShouldBeTrue();
             sut.VirtualMethod("x").ShouldBeFalse();
@@ -172,7 +172,7 @@ namespace Derive.Tests
         [Fact]
         public void Transitive_inheritance_pulls_all_members()
         {
-            var sut = new TransitiveSub();
+            var sut = new TransitiveDerived();
             sut.Value.ShouldBe(21);
             sut.Name.ShouldBe("test");
             sut.Double().ShouldBe(42);
