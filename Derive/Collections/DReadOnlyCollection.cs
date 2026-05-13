@@ -39,6 +39,9 @@ namespace Derive.Collections
         /// <inheritdoc/>
         public abstract int Count { get; }
 
+        /// <inheritdoc/>
+        public abstract IEnumerator<T> GetEnumerator();
+
         /// <inheritdoc cref="ICollection{T}.Contains"/>
         public virtual bool Contains(T item) => CollectionHelpers.ContainsWithLoop(this, item);
 
